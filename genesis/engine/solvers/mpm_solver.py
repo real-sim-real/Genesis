@@ -355,19 +355,41 @@ class MPMSolver(Solver):
                 # to identity).
                 # 2. Jp is only used by Snow material, and it uses Jp from the previous frame, not the updated one.
                 stress = ti.Matrix.zero(gs.ti_float, 3, 3)
-                for material_idx in ti.static(self._materials_idx):
+                for i, material_idx in ti.static(enumerate(self._materials_idx)):
                     if self.particles_info[i_p].material_idx == material_idx:
-                        stress = self._materials_update_stress[material_idx](
-                            U=self.particles[f, i_p, i_b].U,
-                            S=S_new,
-                            V=self.particles[f, i_p, i_b].V,
-                            F_tmp=self.particles[f, i_p, i_b].F_tmp,
-                            F_new=F_new,
-                            J=J,
-                            Jp=self.particles[f, i_p, i_b].Jp,
-                            actu=self.particles[f, i_p, i_b].actu,
-                            m_dir=self.particles_info[i_p].muscle_direction,
-                        )
+                        material = self._materials[i]
+                        # Support for TrainableElastic: compute mu/lam from per-particle params
+                        if ti.static(hasattr(material, 'E_param') and hasattr(self, 'E_param_field')):
+                            E = self.E_param_field[i_p, i_b]
+                            nu = self.nu_param_field[i_p, i_b]
+                            mu = E / (2.0 * (1.0 + nu))
+                            lam = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))
+                            stress = self._materials_update_stress[material_idx](
+                                U=self.particles[f, i_p, i_b].U,
+                                S=S_new,
+                                V=self.particles[f, i_p, i_b].V,
+                                F_tmp=self.particles[f, i_p, i_b].F_tmp,
+                                F_new=F_new,
+                                J=J,
+                                Jp=self.particles[f, i_p, i_b].Jp,
+                                actu=self.particles[f, i_p, i_b].actu,
+                                m_dir=self.particles_info[i_p].muscle_direction,
+                                mu=mu,
+                                lam=lam,
+                            )
+                        else:
+                            # Standard material
+                            stress = self._materials_update_stress[material_idx](
+                                U=self.particles[f, i_p, i_b].U,
+                                S=S_new,
+                                V=self.particles[f, i_p, i_b].V,
+                                F_tmp=self.particles[f, i_p, i_b].F_tmp,
+                                F_new=F_new,
+                                J=J,
+                                Jp=self.particles[f, i_p, i_b].Jp,
+                                actu=self.particles[f, i_p, i_b].actu,
+                                m_dir=self.particles_info[i_p].muscle_direction,
+                            )
                 stress = (-self.substep_dt * self._particle_volume * 4 * self._inv_dx * self._inv_dx) * stress
                 affine = stress + self.particles_info[i_p].mass * self.particles[f, i_p, i_b].C
 
